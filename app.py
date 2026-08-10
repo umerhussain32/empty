@@ -1,40 +1,23 @@
 import streamlit as st
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import requests
 
 st.set_page_config(page_title="Llama 3.1 Storyteller", page_icon="🔮", layout="centered")
 st.title("🔮 Storyteller Llama 3.1 AI")
-st.subheader("Running 100% Free locally via Transformers GGUF")
+st.subheader("Fine-Tuned GGUF + Free Serverless API Wrapper")
 
-# 1. Download and CACHE the model using Streamlit's cloud data
-@st.cache_resource
-def load_transformers_gguf():
-    # Pass the repository name directly to from_pretrained instead of downloading via hf_hub_download
-    repo_id = "UH32/Storyteller-Llama3-GGUF"
-    gguf_filename = "llama-3.1-8b.Q4_K_M.gguf"
-    
-    with st.spinner("Downloading and loading GGUF weights directly to Streamlit Cloud memory... (Takes 1-2 mins on first load, uses 0% of your data)"):
-        # Explicitly configure transformers to fetch and load the GGUF file
-        model = AutoModelForCausalLM.from_pretrained(
-            repo_id,
-            gguf_file=gguf_filename,
-            device_map="cpu"
-        )
-        
-        # Load a standard matching tokenizer to parse the text correctly
-        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
-        
-        # Build the local generation text pipeline
-        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
-    return pipe
-
-try:
-    story_pipeline = load_transformers_gguf()
-    st.success("The Cloud Storyteller is permanently cached and ready!")
-except Exception as e:
-    st.error(f"Failed to initialize model: {e}")
+# 1. Verification of the Streamlit Secrets Token
+if "HF_TOKEN" not in st.secrets:
+    st.error("Missing token entry! Go to Streamlit Dashboard -> Advanced Settings -> Secrets and add: HF_TOKEN = 'your_token'")
     st.stop()
 
-# 2. UI Layout Setup
+HF_TOKEN = st.secrets["HF_TOKEN"]
+
+# 2. Hardcoded target routing pointers
+MODEL_ID = "UH32/Storyteller-Llama3-GGUF"
+API_URL = f"https://huggingface.co{MODEL_ID}"
+headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+
+# 3. User Interface View Elements
 user_prompt = st.text_area("Provide a prompt or seed for your custom story:", "Deep inside an ancient forest, a mysterious door appeared...")
 max_tokens = st.slider("Maximum Generation Length (Tokens)", min_value=50, max_value=500, value=200, step=50)
 
@@ -42,26 +25,40 @@ if st.button("Unleash the Storyteller"):
     if not user_prompt.strip():
         st.warning("Please input text first.")
     else:
-        with st.spinner("The Storyteller is crafting your piece... (Processing via cloud CPU)"):
+        with st.spinner("The serverless cluster is running your fine-tuned model..."):
+            
+            # Format standard Llama 3.1 Prompt structure
+            formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            
+            payload = {
+                "inputs": formatted_prompt,
+                "parameters": {
+                    "max_new_tokens": max_tokens,
+                    "return_full_text": False,
+                    "stop": ["<|eot_id|>", "<|end_of_text|>"]
+                }
+            }
+            
             try:
-                # Format standard Llama 3.1 Prompt structure
-                formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+                # Direct HTTP Request post
+                response = requests.post(API_URL, headers=headers, json=payload)
+                result = response.json()
                 
-                # Execute inference directly in server memory
-                outputs = story_pipeline(
-                    formatted_prompt,
-                    max_new_tokens=max_tokens,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9
-                )
-                
-                # Extract and clean response text safely
-                story_text = outputs[0]["generated_text"]
-                clean_story = story_text.replace(formatted_prompt, "").strip()
-                
-                st.success("✨ Your Custom Story:")
-                st.write(clean_story)
-                
+                # Check for standard server-side system status returns
+                if isinstance(result, dict) and "error" in result:
+                    error_msg = result["error"]
+                    if "loading" in error_msg.lower():
+                        st.info("🎯 The Hugging Face serverless instance is waking up your GGUF file repository. Please wait 45 seconds and click generation again!")
+                    else:
+                        st.error(f"Hugging Face Core Error: {error_msg}")
+                        
+                # Extract out response text sequences successfully 
+                elif isinstance(result, list) and len(result) > 0:
+                    story_text = result[0].get("generated_text", "")
+                    st.success("✨ Your Custom Story:")
+                    st.write(story_text)
+                else:
+                    st.error(f"Unexpected data payload signature received: {result}")
+                    
             except Exception as e:
-                st.error(f"Generation Error: {e}")
+                st.error(f"Network Pipeline Error: {e}")
