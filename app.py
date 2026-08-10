@@ -12,9 +12,9 @@ if "HF_TOKEN" not in st.secrets:
 
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
-# 2. Configure endpoint URLs
+# 2. Configure endpoints explicitly
 MODEL_ID = "UH32/Storyteller-Llama3"
-API_URL = f"https://huggingface.co{MODEL_ID}"
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 # 3. Create the UI interface layout
@@ -30,6 +30,7 @@ if st.button("Unleash the Storyteller"):
             # Format standard Llama 3.1 Prompt Template formatting structure
             formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             
+            # The payload now explicitly provides 'inputs' alongside the execution parameters
             payload = {
                 "inputs": formatted_prompt,
                 "parameters": {
@@ -40,11 +41,11 @@ if st.button("Unleash the Storyteller"):
             }
             
             try:
-                # Direct HTTP request for more verbose error capture
+                # Execute direct POST call
                 response = requests.post(API_URL, headers=headers, json=payload)
                 result = response.json()
                 
-                # Handle dictionary format errors (like cold starts)
+                # Check for standard server-side system messages or loading queues
                 if isinstance(result, dict) and "error" in result:
                     error_msg = result["error"]
                     if "loading" in error_msg.lower():
@@ -52,11 +53,14 @@ if st.button("Unleash the Storyteller"):
                     else:
                         st.error(f"HF System Message: {error_msg}")
                         
-                # Handle successful generation response array
+                # Correct response format processing from Hugging Face's pipeline array
                 elif isinstance(result, list) and len(result) > 0:
                     story_text = result[0].get("generated_text", "")
-                    st.success("✨ Your Custom Story:")
-                    st.write(story_text)
+                    if story_text:
+                        st.success("✨ Your Custom Story:")
+                        st.write(story_text)
+                    else:
+                        st.warning("API returned an empty text string response.")
                 else:
                     st.error(f"Unexpected API Format received: {result}")
                     
