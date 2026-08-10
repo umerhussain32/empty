@@ -16,7 +16,7 @@ HF_TOKEN = st.secrets["HF_TOKEN"]
 @st.cache_resource
 def get_ai_client():
     return OpenAI(
-        base_url="https://huggingface.co",
+        base_url="https://api-inference.huggingface.co/v1/",
         api_key=HF_TOKEN
     )
 
@@ -30,10 +30,8 @@ if st.button("Unleash the Storyteller"):
     if not user_prompt.strip():
         st.warning("Please input text first.")
     else:
-        # Visual anchor loader indicator
         with st.spinner("Connecting to the serverless cluster..."):
             try:
-                # Swapped to a standard non-streaming request to safely capture cold-start locks
                 response = client.chat.completions.create(
                     model="UH32/Storyteller-Llama3", 
                     messages=[{"role": "user", "content": user_prompt}],
@@ -41,18 +39,27 @@ if st.button("Unleash the Storyteller"):
                     stream=False  
                 )
                 
-                # Extract out response text sequences successfully 
-                story_text = response.choices[0].message.content
+                # CRITICAL SECURITY FIX: Intercept raw strings (Hugging Face loading errors)
+                if isinstance(response, str):
+                    error_lower = response.lower()
+                    if "loading" in error_lower or "estimated" in error_lower or "423" in error_lower:
+                        st.info("🎯 Hugging Face is mounting your adapter to the base weights in its GPU cluster. Please wait 45 seconds and click unleash again!")
+                    else:
+                        st.error(f"Hugging Face Text Alert: {response}")
                 
-                if story_text:
-                    st.success("✨ Your Custom Story:")
-                    st.write(story_text)
+                # Safely parse standard OpenAI structural objects if valid
+                elif hasattr(response, "choices") and len(response.choices) > 0:
+                    story_text = response.choices[0].message.content
+                    if story_text:
+                        st.success("✨ Your Custom Story:")
+                        st.write(story_text)
+                    else:
+                        st.warning("The model responded with empty text. Try a different prompt.")
                 else:
-                    st.warning("The model responded with empty text. Try a different prompt.")
+                    st.error(f"Unexpected response data layout: {response}")
                         
             except Exception as e:
                 error_str = str(e).lower()
-                # Safely catch the free-tier model wakeup behavior
                 if "loading" in error_str or "estimated time" in error_str or "423" in error_str:
                     st.info("🎯 Hugging Face is mounting your adapter to the base weights in its GPU cluster. Please wait 45 seconds and click unleash again!")
                 else:
