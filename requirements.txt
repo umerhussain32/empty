@@ -1,5 +1,2 @@
 streamlit
-huggingface_hub
-transformers
-torch
-accelerate
+requests
