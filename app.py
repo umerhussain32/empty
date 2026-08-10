@@ -12,9 +12,8 @@ if "HF_TOKEN" not in st.secrets:
 
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
-# 2. Hardcoded target routing pointers
-MODEL_ID = "UH32/Storyteller-Llama3-GGUF"
-API_URL = f"https://huggingface.co{MODEL_ID}"
+# 2. Hardcoded direct endpoint to prevent any concatenation string typos
+API_URL = "https://huggingface.co"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 # 3. User Interface View Elements
@@ -54,6 +53,7 @@ if st.button("Unleash the Storyteller"):
                         
                 # Extract out response text sequences successfully 
                 elif isinstance(result, list) and len(result) > 0:
+                    # Target list element structure correctly
                     story_text = result[0].get("generated_text", "")
                     st.success("✨ Your Custom Story:")
                     st.write(story_text)
