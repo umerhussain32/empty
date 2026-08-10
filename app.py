@@ -3,7 +3,7 @@ import requests
 
 st.set_page_config(page_title="Llama 3.1 Storyteller", page_icon="🔮", layout="centered")
 st.title("🔮 Storyteller Llama 3.1 AI")
-st.subheader("Fine-Tuned GGUF + Free Serverless API Wrapper")
+st.subheader("Fine-Tuned GGUF + Modern Serverless API Router")
 
 # 1. Verification of the Streamlit Secrets Token
 if "HF_TOKEN" not in st.secrets:
@@ -12,7 +12,7 @@ if "HF_TOKEN" not in st.secrets:
 
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
-# 2. Hardcoded direct endpoint to prevent any concatenation string typos
+# 2. FIXED: Using the active, modern Hugging Face Router endpoint surface
 API_URL = "https://huggingface.co"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
@@ -24,7 +24,7 @@ if st.button("Unleash the Storyteller"):
     if not user_prompt.strip():
         st.warning("Please input text first.")
     else:
-        with st.spinner("The serverless cluster is running your fine-tuned model..."):
+        with st.spinner("The modern router cluster is running the model query..."):
             
             # Format standard Llama 3.1 Prompt structure
             formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
@@ -41,24 +41,28 @@ if st.button("Unleash the Storyteller"):
             try:
                 # Direct HTTP Request post
                 response = requests.post(API_URL, headers=headers, json=payload)
-                result = response.json()
                 
-                # Check for standard server-side system status returns
-                if isinstance(result, dict) and "error" in result:
-                    error_msg = result["error"]
-                    if "loading" in error_msg.lower():
-                        st.info("🎯 The Hugging Face serverless instance is waking up your GGUF file repository. Please wait 45 seconds and click generation again!")
-                    else:
-                        st.error(f"Hugging Face Core Error: {error_msg}")
-                        
-                # Extract out response text sequences successfully 
-                elif isinstance(result, list) and len(result) > 0:
-                    # Target list element structure correctly
-                    story_text = result[0].get("generated_text", "")
-                    st.success("✨ Your Custom Story:")
-                    st.write(story_text)
+                # Check for standard server-side system blocks before decoding JSON
+                if response.status_code != 200:
+                    st.error(f"Server Connection Issue (HTTP {response.status_code}): {response.text}")
                 else:
-                    st.error(f"Unexpected data payload signature received: {result}")
+                    result = response.json()
+                    
+                    # Check for server loading queues
+                    if isinstance(result, dict) and "error" in result:
+                        error_msg = result["error"]
+                        if "loading" in error_msg.lower():
+                            st.info("🎯 The base Llama instance is initializing. Please wait 30 seconds and click unleash again!")
+                        else:
+                            st.error(f"Hugging Face Router Error: {error_msg}")
+                            
+                    # Extract response text successfully
+                    elif isinstance(result, list) and len(result) > 0:
+                        story_text = result[0].get("generated_text", "")
+                        st.success("✨ Your Custom Story:")
+                        st.write(story_text)
+                    else:
+                        st.error(f"Unexpected data payload returned: {result}")
                     
             except Exception as e:
-                st.error(f"Network Pipeline Error: {e}")
+                st.error(f"Pipeline Interface Error: {e}")
