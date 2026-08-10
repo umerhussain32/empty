@@ -30,30 +30,30 @@ if st.button("Unleash the Storyteller"):
     if not user_prompt.strip():
         st.warning("Please input text first.")
     else:
-        # Create an empty placeholder container to stream text into natively
-        story_placeholder = st.empty()
-        full_story_text = ""
-        
+        # Visual anchor loader indicator
         with st.spinner("Connecting to the serverless cluster..."):
             try:
-                # Make an OpenAI-compatible completion request pointing directly to your adapter
-                stream = client.chat.completions.create(
-                    model="UH32/Storyteller-Llama3", # Points directly to your adapter repo
+                # Swapped to a standard non-streaming request to safely capture cold-start locks
+                response = client.chat.completions.create(
+                    model="UH32/Storyteller-Llama3", 
                     messages=[{"role": "user", "content": user_prompt}],
                     max_tokens=max_tokens,
-                    stream=True  # Enables token streaming so the user sees text printing instantly
+                    stream=False  
                 )
                 
-                # Stream responses to frontend view layers
-                for chunk in stream:
-                    if chunk.choices[0].delta.content is not None:
-                        full_story_text += chunk.choices[0].delta.content
-                        story_placeholder.markdown(full_story_text)
+                # Extract out response text sequences successfully 
+                story_text = response.choices[0].message.content
+                
+                if story_text:
+                    st.success("✨ Your Custom Story:")
+                    st.write(story_text)
+                else:
+                    st.warning("The model responded with empty text. Try a different prompt.")
                         
             except Exception as e:
                 error_str = str(e).lower()
-                # Catch the free-tier model wakeup behavior safely
-                if "loading" in error_str or "estimated time" in error_str:
+                # Safely catch the free-tier model wakeup behavior
+                if "loading" in error_str or "estimated time" in error_str or "423" in error_str:
                     st.info("🎯 Hugging Face is mounting your adapter to the base weights in its GPU cluster. Please wait 45 seconds and click unleash again!")
                 else:
                     st.error(f"Pipeline System Error: {e}")
