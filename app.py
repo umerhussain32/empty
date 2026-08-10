@@ -1,5 +1,4 @@
 import streamlit as st
-from huggingface_hub import hf_hub_download
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 st.set_page_config(page_title="Llama 3.1 Storyteller", page_icon="🔮", layout="centered")
@@ -9,21 +8,19 @@ st.subheader("Running 100% Free locally via Transformers GGUF")
 # 1. Download and CACHE the model using Streamlit's cloud data
 @st.cache_resource
 def load_transformers_gguf():
-    with st.spinner("Downloading GGUF weights (~4.8GB) to Streamlit Cloud... (Takes 1-2 mins on first load, uses 0% of your personal data)"):
-        # Fixed: Using your exact repository and exact filename from your model card
-        model_file = hf_hub_download(
-            repo_id="UH32/Storyteller-Llama3-GGUF", 
-            filename="llama-3.1-8b.Q4_K_M.gguf"
-        )
+    # Pass the repository name directly to from_pretrained instead of downloading via hf_hub_download
+    repo_id = "UH32/Storyteller-Llama3-GGUF"
+    gguf_filename = "llama-3.1-8b.Q4_K_M.gguf"
     
-    with st.spinner("Loading architecture into cloud CPU memory..."):
-        # Load the GGUF file natively
+    with st.spinner("Downloading and loading GGUF weights directly to Streamlit Cloud memory... (Takes 1-2 mins on first load, uses 0% of your data)"):
+        # Explicitly configure transformers to fetch and load the GGUF file
         model = AutoModelForCausalLM.from_pretrained(
-            model_file,
-            gguf=True,
+            repo_id,
+            gguf_file=gguf_filename,
             device_map="cpu"
         )
-        # Load a standard tokenizer to parse the text correctly
+        
+        # Load a standard matching tokenizer to parse the text correctly
         tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
         
         # Build the local generation text pipeline
