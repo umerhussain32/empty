@@ -1,9 +1,9 @@
 import streamlit as st
-import requests
+from openai import OpenAI
 
 st.set_page_config(page_title="Llama 3.1 Storyteller", page_icon="🔮", layout="centered")
 st.title("🔮 Storyteller Llama 3.1 AI")
-st.subheader("Fine-Tuned GGUF + Modern Serverless API Router")
+st.subheader("Fine-Tuned Adapter + Free Serverless OpenAI Pipeline")
 
 # 1. Verification of the Streamlit Secrets Token
 if "HF_TOKEN" not in st.secrets:
@@ -12,9 +12,15 @@ if "HF_TOKEN" not in st.secrets:
 
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
-# 2. FIXED: Using the active, modern Hugging Face Router endpoint surface
-API_URL = "https://huggingface.co"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# 2. Configure the client using Hugging Face's official OpenAI-compatible gateway
+@st.cache_resource
+def get_ai_client():
+    return OpenAI(
+        base_url="https://huggingface.co",
+        api_key=HF_TOKEN
+    )
+
+client = get_ai_client()
 
 # 3. User Interface View Elements
 user_prompt = st.text_area("Provide a prompt or seed for your custom story:", "Deep inside an ancient forest, a mysterious door appeared...")
@@ -24,45 +30,30 @@ if st.button("Unleash the Storyteller"):
     if not user_prompt.strip():
         st.warning("Please input text first.")
     else:
-        with st.spinner("The modern router cluster is running the model query..."):
-            
-            # Format standard Llama 3.1 Prompt structure
-            formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-            
-            payload = {
-                "inputs": formatted_prompt,
-                "parameters": {
-                    "max_new_tokens": max_tokens,
-                    "return_full_text": False,
-                    "stop": ["<|eot_id|>", "<|end_of_text|>"]
-                }
-            }
-            
+        # Create an empty placeholder container to stream text into natively
+        story_placeholder = st.empty()
+        full_story_text = ""
+        
+        with st.spinner("Connecting to the serverless cluster..."):
             try:
-                # Direct HTTP Request post
-                response = requests.post(API_URL, headers=headers, json=payload)
+                # Make an OpenAI-compatible completion request pointing directly to your adapter
+                stream = client.chat.completions.create(
+                    model="UH32/Storyteller-Llama3", # Points directly to your adapter repo
+                    messages=[{"role": "user", "content": user_prompt}],
+                    max_tokens=max_tokens,
+                    stream=True  # Enables token streaming so the user sees text printing instantly
+                )
                 
-                # Check for standard server-side system blocks before decoding JSON
-                if response.status_code != 200:
-                    st.error(f"Server Connection Issue (HTTP {response.status_code}): {response.text}")
-                else:
-                    result = response.json()
-                    
-                    # Check for server loading queues
-                    if isinstance(result, dict) and "error" in result:
-                        error_msg = result["error"]
-                        if "loading" in error_msg.lower():
-                            st.info("🎯 The base Llama instance is initializing. Please wait 30 seconds and click unleash again!")
-                        else:
-                            st.error(f"Hugging Face Router Error: {error_msg}")
-                            
-                    # Extract response text successfully
-                    elif isinstance(result, list) and len(result) > 0:
-                        story_text = result[0].get("generated_text", "")
-                        st.success("✨ Your Custom Story:")
-                        st.write(story_text)
-                    else:
-                        st.error(f"Unexpected data payload returned: {result}")
-                    
+                # Stream responses to frontend view layers
+                for chunk in stream:
+                    if chunk.choices[0].delta.content is not None:
+                        full_story_text += chunk.choices[0].delta.content
+                        story_placeholder.markdown(full_story_text)
+                        
             except Exception as e:
-                st.error(f"Pipeline Interface Error: {e}")
+                error_str = str(e).lower()
+                # Catch the free-tier model wakeup behavior safely
+                if "loading" in error_str or "estimated time" in error_str:
+                    st.info("🎯 Hugging Face is mounting your adapter to the base weights in its GPU cluster. Please wait 45 seconds and click unleash again!")
+                else:
+                    st.error(f"Pipeline System Error: {e}")
