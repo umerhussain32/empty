@@ -1,21 +1,25 @@
 import streamlit as st
-import requests
+from huggingface_hub import InferenceClient
 
 st.set_page_config(page_title="Llama 3.1 Storyteller", page_icon="🔮", layout="centered")
 st.title("🔮 Storyteller Llama 3.1 AI")
 st.subheader("Fine-tuned Adapter + Free Serverless API")
 
-# 1. Safely load your token
+# 1. Safely load your token from secrets
 if "HF_TOKEN" not in st.secrets:
     st.error("Missing HF_TOKEN inside Streamlit Secrets!")
     st.stop()
 
 HF_TOKEN = st.secrets["HF_TOKEN"]
 
-# 2. Configure endpoints explicitly
+# 2. Use the stable InferenceClient which handles DNS routing internally
 MODEL_ID = "UH32/Storyteller-Llama3"
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+
+@st.cache_resource
+def get_inference_client(token):
+    return InferenceClient(token=token)
+
+client = get_inference_client(HF_TOKEN)
 
 # 3. Create the UI interface layout
 user_prompt = st.text_area("Provide a prompt or seed for your custom story:", "Deep inside an ancient forest, a mysterious door appeared...")
@@ -30,39 +34,25 @@ if st.button("Unleash the Storyteller"):
             # Format standard Llama 3.1 Prompt Template formatting structure
             formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             
-            # The payload now explicitly provides 'inputs' alongside the execution parameters
-            payload = {
-                "inputs": formatted_prompt,
-                "parameters": {
-                    "max_new_tokens": max_tokens,
-                    "return_full_text": False,
-                    "stop": ["<|eot_id|>", "<|end_of_text|>"]
-                }
-            }
-            
             try:
-                # Execute direct POST call
-                response = requests.post(API_URL, headers=headers, json=payload)
-                result = response.json()
+                # Use the dedicated text_generation pipeline to force the correct routing
+                story_text = client.text_generation(
+                    prompt=formatted_prompt,
+                    model=MODEL_ID,
+                    max_new_tokens=max_tokens,
+                    stop=["<|eot_id|>", "<|end_of_text|>"]
+                )
                 
-                # Check for standard server-side system messages or loading queues
-                if isinstance(result, dict) and "error" in result:
-                    error_msg = result["error"]
-                    if "loading" in error_msg.lower():
-                        st.info("🎯 Hugging Face is mounting your adapter to Meta's Llama 3.1 base weights. Please wait 45 seconds and click the button again!")
-                    else:
-                        st.error(f"HF System Message: {error_msg}")
-                        
-                # Correct response format processing from Hugging Face's pipeline array
-                elif isinstance(result, list) and len(result) > 0:
-                    story_text = result[0].get("generated_text", "")
-                    if story_text:
-                        st.success("✨ Your Custom Story:")
-                        st.write(story_text)
-                    else:
-                        st.warning("API returned an empty text string response.")
+                if story_text:
+                    st.success("✨ Your Custom Story:")
+                    st.write(story_text)
                 else:
-                    st.error(f"Unexpected API Format received: {result}")
+                    st.warning("API returned an empty text string response.")
                     
             except Exception as e:
-                st.error(f"Network Connection Error: {e}")
+                error_str = str(e).lower()
+                # Catch and explain the free-tier cold start warming cycle safely
+                if "loading" in error_str or "estimated time" in error_str:
+                    st.info("🎯 Hugging Face is mounting your adapter to Meta's Llama 3.1 base weights. Please wait 45 seconds and click the button again!")
+                else:
+                    st.error(f"HF System Message: {e}")
