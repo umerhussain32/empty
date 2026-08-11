@@ -3,20 +3,27 @@ from google import genai
 import tempfile
 import os
 
-# Secure connection via Streamlit Secrets management
+# --- 1. SANITIZED API KEY AUTHENTICATION BLOCK ---
 if "GEMINI_API_KEY" in st.secrets:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    raw_key = st.secrets["GEMINI_API_KEY"]
 else:
-    # Sidebar input for fallback/local testing
-    GEMINI_API_KEY = st.sidebar.text_input("Gemini API Key", type="password")
+    raw_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-if GEMINI_API_KEY:
-    # Initialize the modern unified client built for AQ keys
+if raw_key:
+    # Strict cleaning to scrub out any accidental smart/curly quotes causing the error
+    GEMINI_API_KEY = str(raw_key).strip().replace("’", "").replace("‘", "").replace('"', '').replace("'", "")
+    
+    try:
+        GEMINI_API_KEY.encode('ascii')
+    except UnicodeEncodeError:
+        st.error("Your API key still contains hidden non-ASCII characters. Please clear the text box and paste it again.")
+        st.stop()
+
+    # Initialize the modern unified client built for new AQ keys
     client = genai.Client(api_key=GEMINI_API_KEY)
-    # UPDATED: Using the latest available stable flash model
     MODEL_NAME = "gemini-3.6-flash"
 else:
-    st.warning("Provide your Gemini API Key in the sidebar to continue.")
+    st.warning("Provide your Gemini API Key to continue.")
     st.stop()
 
 # Initialize file management tracking session state
