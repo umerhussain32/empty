@@ -12,7 +12,61 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# ============================================================
+# Helper Functions (Defined FIRST)
+# ============================================================
+def display_story(story, language, metadata, prompt):
+    """Display the generated story with proper formatting"""
+    
+    st.markdown("---")
+    
+    # Success message
+    st.markdown(f"""
+    <div class="success-message">
+        ✅ Story generated successfully!
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Metadata
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("📚 Language", "Urdu" if language == "urdu" else "English")
+    with col2:
+        st.metric("🎭 Genre", metadata.get('genre', 'General').capitalize())
+    with col3:
+        word_count = len(story.split())
+        st.metric("📝 Words", word_count)
+    with col4:
+        st.metric("🎨 Temperature", f"{metadata.get('temperature', 0.85):.2f}")
+    
+    # Story display with proper formatting
+    st.markdown("### 📖 Your Story")
+    
+    if language == "urdu":
+        st.markdown(f"""
+        <div class="story-container urdu-text">
+            {story}
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="story-container english-text">
+            {story}
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Download button
+    st.download_button(
+        label="📥 Download Story as Text",
+        data=story,
+        file_name=f"story_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain",
+        use_container_width=True
+    )
+
+# ============================================================
+# Custom CSS
+# ============================================================
 st.markdown("""
 <style>
     /* Main container styling */
@@ -79,6 +133,8 @@ st.markdown("""
         border-radius: 10px;
         color: white;
         font-weight: bold;
+        text-align: center;
+        margin: 10px 0;
     }
     
     /* Metadata box */
@@ -97,6 +153,11 @@ st.markdown("""
         background: linear-gradient(to right, #ff6b6b, transparent);
         margin: 30px 0;
     }
+    
+    /* Warning and info boxes */
+    .stAlert {
+        border-radius: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,8 +170,8 @@ if 'current_story' not in st.session_state:
     st.session_state.current_story = None
 if 'api_url' not in st.session_state:
     st.session_state.api_url = ""
-if 'prompt_history' not in st.session_state:
-    st.session_state.prompt_history = []
+if 'prompt_input' not in st.session_state:
+    st.session_state.prompt_input = ""
 
 # ============================================================
 # Sidebar Configuration
@@ -233,7 +294,7 @@ with st.sidebar:
         ]
     }
     
-    for prompt in example_prompts.get(language, example_prompts["english"])[:3]:
+    for prompt in example_prompts.get(language, example_prompts["english"])[:4]:
         if st.button(f"📌 {prompt[:30]}...", key=f"example_{prompt}"):
             st.session_state.prompt_input = prompt
     
@@ -332,20 +393,25 @@ if generate_button and prompt:
                 # If story is still short, try the long endpoint
                 if len(story.split()) < 100 and story_length in ["long", "epic"]:
                     status_text.text("📖 Generating longer version...")
-                    long_response = requests.post(
-                        f"{st.session_state.api_url}/generate_long",
-                        json={
-                            "prompt": prompt,
-                            "temperature": temperature,
-                            "genre": genre,
-                            "language": language
-                        },
-                        timeout=300
-                    )
-                    if long_response.status_code == 200:
-                        long_data = long_response.json()
-                        if len(long_data.get("generated_text", "").split()) > len(story.split()):
-                            story = long_data.get("generated_text", story)
+                    try:
+                        long_response = requests.post(
+                            f"{st.session_state.api_url}/generate_long",
+                            json={
+                                "prompt": prompt,
+                                "temperature": temperature,
+                                "genre": genre,
+                                "language": language
+                            },
+                            timeout=300
+                        )
+                        if long_response.status_code == 200:
+                            long_data = long_response.json()
+                            long_story = long_data.get("generated_text", "")
+                            if len(long_story.split()) > len(story.split()):
+                                story = long_story
+                                metadata = long_data.get("metadata", metadata)
+                    except:
+                        pass  # Keep original story if long endpoint fails
                 
                 progress_bar.progress(100)
                 status_text.text(f"✅ Story generated in {int(time.time() - start_time)} seconds!")
@@ -366,7 +432,7 @@ if generate_button and prompt:
                 
             else:
                 st.error(f"❌ API Error: {response.status_code}")
-                st.text(response.text)
+                st.text(response.text[:500])  # Show first 500 chars of error
                 
         except requests.exceptions.Timeout:
             st.error("⏰ Request timed out. Try with a shorter story length.")
@@ -398,61 +464,6 @@ if st.session_state.generated_stories:
             
             if st.button(f"📋 Copy Story {len(st.session_state.generated_stories) - idx}", key=f"copy_{idx}"):
                 st.code(story_text, language='text')
-
-# ============================================================
-# Helper Functions
-# ============================================================
-def display_story(story, language, metadata, prompt):
-    """Display the generated story with proper formatting"""
-    
-    st.markdown("---")
-    
-    # Success message
-    st.markdown(f"""
-    <div class="success-message">
-        ✅ Story generated successfully!
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Metadata
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📚 Language", "Urdu" if language == "urdu" else "English")
-    with col2:
-        st.metric("🎭 Genre", metadata.get('genre', 'General').capitalize())
-    with col3:
-        word_count = len(story.split())
-        st.metric("📝 Words", word_count)
-    with col4:
-        st.metric("🎨 Temperature", f"{metadata.get('temperature', 0.85):.2f}")
-    
-    # Story display with proper formatting
-    st.markdown("### 📖 Your Story")
-    
-    if language == "urdu":
-        st.markdown(f"""
-        <div class="story-container urdu-text">
-            {story}
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-        <div class="story-container english-text">
-            {story}
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Download button
-    st.download_button(
-        label="📥 Download Story as Text",
-        data=story,
-        file_name=f"story_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-        mime="text/plain",
-        use_container_width=True
-    )
-    
-    # Copy to clipboard button (using st.code for easy copying)
-    st.caption("📋 Select the text above and copy, or use the download button.")
 
 # ============================================================
 # Footer
