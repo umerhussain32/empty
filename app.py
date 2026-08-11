@@ -2,6 +2,7 @@ import streamlit as st
 from google import genai
 import tempfile
 import os
+import re
 
 # --- 1. SANITIZED API KEY AUTHENTICATION BLOCK ---
 if "GEMINI_API_KEY" in st.secrets:
@@ -42,16 +43,35 @@ uploaded_files = st.file_uploader(
 if st.button("Process & Upload to File API"):
     if uploaded_files:
         for file in uploaded_files:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.name}") as temp_file:
+            # FIX: Clean the file name to remove ANY non-ASCII or special characters before processing
+            clean_name = re.sub(r'[^\x00-\x7F]+', '', file.name)
+            # Remove spaces just to be absolutely safe with header boundaries
+            clean_name = clean_name.replace(" ", "_")
+            
+            # If the filename becomes completely empty after stripping, provide a default fallback name
+            if not clean_name or clean_name.startswith('.'):
+                clean_name = f"uploaded_media_{int(tempfile.time.time())}"
+            
+            # Get the file extension
+            _, ext = os.path.splitext(file.name)
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{clean_name}{ext}") as temp_file:
                 temp_file.write(file.read())
                 temp_path = temp_file.name
             
             with st.spinner(f"Uploading {file.name} to Gemini Cloud Space..."):
-                gemini_file = client.files.upload(file=temp_path)
-                st.session_state.uploaded_gemini_files.append(gemini_file)
-            
-            os.remove(temp_path)
-        st.success(f"Successfully staged {len(uploaded_files)} objects!")
+                try:
+                    # Pass the fully sanitized temporary file path safely
+                    gemini_file = client.files.upload(file=temp_path)
+                    st.session_state.uploaded_gemini_files.append(gemini_file)
+                except Exception as upload_error:
+                    st.error(f"Failed to upload {file.name}: {str(upload_error)}")
+                finally:
+                    # Ensure the local OS file boundary is cleaned up even if the network fails
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                        
+        st.success(f"Successfully processed objects!")
 
 if st.session_state.uploaded_gemini_files:
     st.write("### Currently Indexed Files:")
@@ -87,6 +107,9 @@ if user_query:
 
 if st.sidebar.button("Flush Files Cache"):
     for f in st.session_state.uploaded_gemini_files:
-        client.files.delete(name=f.name)
+        try:
+            client.files.delete(name=f.name)
+        except Exception:
+            pass
     st.session_state.uploaded_gemini_files = []
     st.sidebar.success("Cloud directory purged.")
